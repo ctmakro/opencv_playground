@@ -4,21 +4,16 @@ import math
 import random
 import time
 
+# calculate phase angle from image gradient
+# in float32 radian
 def get_phase(i):
-    #grayify
-    # igray = np.mean(i,axis=2).astype('uint8')
+    # grayify
     igray = cv2.cvtColor(i,cv2.COLOR_BGR2GRAY).astype('float32')
 
-    #blur
-    # igray = cv2.blur(igray,(3,3))
-
-    # xg,yg = cv2.spatialGradient(igray)
+    # gradient
     xg = cv2.Sobel(igray,cv2.CV_32F,1,0,ksize=7)
     yg = - cv2.Sobel(igray,cv2.CV_32F,0,1,ksize=7)
-    # for some unknown reasons there has to be a minus sign...
-    # otherwise the gradient for y is reversed.
-
-    # xg,yg = xg.astype('float32'),yg.astype('float32')
+    # in image axis y points downwards, hence the minus sign
 
     def c(i):
         return i.clip(min=0)
@@ -26,34 +21,9 @@ def get_phase(i):
     def b(i):
         return cv2.blur(i,(5,5))
 
-    # separate
-    # xgp = c(xg)
-    # xgn = c(-xg)
-    #
-    # ygp = c(yg)
-    # ygn = c(-yg)
-    #
-    # xgp,xgn,ygp,ygn = b(xgp),b(xgn),b(ygp),b(ygn)
-    #
-    # xg = xgp-xgn
-    # yg = ygp-ygn
-
-    # xg = xg*xg
-    # yg = yg*yg
-    # xg,yg = b(xg),b(yg)
-
     phase = cv2.phase(xg,yg)
-    # for p in np.nditer(phase,op_flags=['readwrite']):
-    #     p[...] = p-math.pi if p>math.pi else p
-    #
-    # xg = np.sin(phase)
-    # yg = np.cos(phase-math.pi/2)
-    #
-    # xg,yg = b(xg),b(yg)
-    #
-    # phase = cv2.phase(xg,yg)
 
-    return phase
+    return phase # radian
 
 def test():
     i = cv2.imread('2622s.jpg')

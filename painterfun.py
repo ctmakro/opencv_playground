@@ -3,42 +3,44 @@ import cv2
 import math
 import random
 import time
+import rotate_brush as rb
+import gradient
+from thready import amap
 
-imname = 'flower'
-# flower = cv2.imread('2622.jpg')
+imname = 'flower' # change this line to load different images
+
+# original image
 flower = cv2.imread(imname+'.jpg')
+
 xshape = flower.shape[1]
 yshape = flower.shape[0]
 
 rescale = xshape/768
+# display rescaling: you'll know when it's larger than your screen
 if rescale<1:
     rescale=1
+
 xs_small = int(xshape/rescale)
 ys_small = int(yshape/rescale)
 
 smallerflower = cv2.resize(flower,dsize=(xs_small,ys_small)).astype('float32')/255
-# for preview purpose if image too large
+# for preview purpose,
+# if image too large
 
+# convert to float32
 flower = np.array(flower).astype('float32')/255
 
+# canvas initialized
 canvas = np.zeros((yshape,xshape,3))+0.8
-
-# mask = np.zeros((yshape,xshape))
-# brush = cv2.imread('brush.png',0)
-# brush2 = cv2.imread('brush2.png',0)
-# brush_leaky = cv2.imread('brush_leaky.png',0)
-# brush_s = cv2.imread('brush_s.png',0)
-# brush_curvy = cv2.imread('brush_curvy.png',0)
-import rotate_brush as rb
 
 def rn():
     return random.random()
+
 def showimg():
     if rescale==1:
         smallercanvas = canvas
     else:
         smallercanvas = cv2.resize(canvas,dsize=(xs_small,ys_small),interpolation=cv2.INTER_NEAREST)
-
 
     i,j,d = wherediff(smallercanvas,smallerflower)
     sd = np.mean(d)
@@ -50,7 +52,7 @@ def showimg():
     cv2.imshow('canvas',smallercanvas)
     cv2.imshow('flower',smallerflower)
     cv2.imshow('diff',d)
-    # cv2.imshow('mask',mask)
+
     cv2.waitKey(1)
     cv2.waitKey(1)
 
@@ -58,7 +60,7 @@ def destroy():
     cv2.destroyAllWindows()
 
 def positive_sharpen(i,overblur=False,coeff=8.): #no darken to original image
-    # sharpen version of i
+    # emphasize the edges
     blurred = cv2.blur(i,(5,5))
     sharpened = i*(1+coeff) - blurred * coeff
     if overblur:
@@ -66,7 +68,7 @@ def positive_sharpen(i,overblur=False,coeff=8.): #no darken to original image
     return cv2.blur(np.maximum(sharpened,i),(3,3))
 
 def diff(i1,i2,overblur=False):
-    #calculate lab difference
+    #calculate the difference of 2 float32 BGR images.
 
     # # use lab
     # i1=i1.astype(np.float32)
@@ -85,15 +87,11 @@ def diff(i1,i2,overblur=False):
     # grayscalize
 
 def wherediff(i1=canvas,i2=flower):
-    # mask out hot area
+    # find out where max difference point is.
     d = diff(i1,i2,overblur=True)
 
     i,j = np.unravel_index(d.argmax(),d.shape)
-    # print('wherediff:',i,j)
     return i,j,d
-
-def getcolor(i,j):
-    return flower[i,j,:]
 
 def get_random_color():
     return np.array([rn(),rn(),rn()])
@@ -101,12 +99,14 @@ def get_random_color():
 def limit(x,minimum,maximum):
     return min(max(x,minimum),maximum)
 
-# hist replay section
+# history and replay section
 
+# global history.
 hist = []
 def record(sth):
     hist.append(sth)
 
+# repaint the image from history
 def repaint(constraint_angle=False,upscale=1.,batchsize=16):
     starttime = time.time()
 
@@ -117,7 +117,6 @@ def repaint(constraint_angle=False,upscale=1.,batchsize=16):
         newcanvas = cv2.resize(newcanvas,dsize=(int(newcanvas.shape[1]*upscale),int(newcanvas.shape[0]*upscale)))
 
     newcanvas[:,:,:] = int(0.8*255)
-    # newcanvas[:,:,3] = 255
 
     def showthis():
         showsize = 640
@@ -135,7 +134,6 @@ def repaint(constraint_angle=False,upscale=1.,batchsize=16):
         # cv2.ellipse(newcanvas,(int(x),int(y)),(radius,srad),angle,0,360,color=(cb,cg,cr),thickness=-1)
 
         b,key = rb.get_brush(brushname)
-        # b = brush if rn()>0.5 else brush2
 
         if constraint_angle:
             angle = constraint_angle+rn()*20-10
@@ -161,6 +159,7 @@ def repaint(constraint_angle=False,upscale=1.,batchsize=16):
         runbatch(batch)
         print(k,'painted. one of them:',batch[0])
 
+        # show progress:
         ep = int(k/(newcanvas.shape[1]*upscale)) # larger image => longer wait per show
         if ep >lastep:
             showthis()
@@ -173,13 +172,13 @@ def repaint(constraint_angle=False,upscale=1.,batchsize=16):
     return newcanvas
 
 import json
-def savehist():
-    f = open('hist.json','w')
+def savehist(filename='hist.json'):
+    f = open(filename,'w')
     json.dump(hist,f)
     f.close()
 
-def loadhist():
-    f = open('hist.json','r')
+def loadhist(filename='hist.json'):
+    f = open(filename,'r')
     global hist
     hist = json.load(f)
 
@@ -203,27 +202,15 @@ def paint_one(x,y,brushname='random',angle=-1.,minrad=10,maxrad=60):
     if angle == -1.:
         angle = rn()*360
 
-    #set initial color
+    # set initial color
     c = get_random_color()
-    c[:] = flower[int(y),int(x),:]# + c[:]*.15
+    # sample color from image => converges faster.
+    c[:] = flower[int(y),int(x),:]
 
     delta = 1e-4
 
-    # set initial roi
-    # yp = int(min(y+radius,yshape-1))
-    # ym = int(max(0,y-radius))
-    # xp = int(min(x+radius,xshape-1))
-    # xm = int(max(0,x-radius))
-    # ref = flower[ym:yp,xm:xp]
-    # bef = canvas[ym:yp,xm:xp]
-    # aftr = np.array(bef)
-    # orig_err = np.mean(diff(bef,ref))
-
+    # get copy of square ROI area, to do drawing and calculate error.
     def get_roi(newx,newy,newrad):
-
-        # nonlocal yp,ym,xp,xm
-        # if y!=newy or x!=newx or newrad!=oradius:
-        # if changes happened to roi
 
         radius,srad = intrad(newrad)
 
@@ -240,29 +227,26 @@ def paint_one(x,y,brushname='random',angle=-1.,minrad=10,maxrad=60):
         bef = canvas[ym:yp,xm:xp]
         aftr = np.array(bef)
 
-            # orig_err = np.mean(diff(bef,ref))
-
-        # else:
-        #     nonlocal aftr,bef
-        #     aftr[:] = bef[:]
         return ref,bef,aftr
 
+    # paint one stroke with given config and return the error.
     def paint_aftr_w(color,angle,nx,ny,nr):
         ref,bef,aftr = get_roi(nx,ny,nr)
         radius,srad = intrad(nr)
-        # cv2.circle(aftr,(radius,radius),radius,color=color,thickness=-1)
 
+        # cv2.circle(aftr,(radius,radius),radius,color=color,thickness=-1)
         # cv2.ellipse(aftr,(radius,radius),(radius,srad),angle,0,360,color=color,thickness=-1)
 
         rb.compose(aftr,brush,x=radius,y=radius,rad=radius,srad=srad,angle=angle,color=color,usefloat=True,useoil=False)
-
         # if useoil here set to true: 2x slow down + instability
 
         err_aftr = np.mean(diff(aftr,ref))
         return err_aftr
 
+    # finally paint the same stroke onto the canvas.
     def paint_final_w(color,angle,nr):
         radius,srad = intrad(nr)
+
         # cv2.circle(canvas,(x,y), radius, color=color,thickness=-1)
         # cv2.ellipse(canvas,(int(x),int(y)),(radius,srad),angle,0,360,color=color,thickness=-1)
 
@@ -272,13 +256,11 @@ def paint_one(x,y,brushname='random',angle=-1.,minrad=10,maxrad=60):
         record([x,y,radius,srad,angle,color[0],color[1],color[2],brushname])
         # log it!
 
+    # given err, calculate gradient of parameters wrt to it
     def calc_gradient(err):
         b,g,r = c[0],c[1],c[2]
         cc = b,g,r
 
-        # paint_aftr_w(cc,angle,x,y,oradius)
-        # err = err_aftr()
-        # print('err',err)
         err_aftr = paint_aftr_w((b+delta,g,r),angle,x,y,oradius)
         gb = err_aftr - err
 
@@ -302,37 +284,40 @@ def paint_one(x,y,brushname='random',angle=-1.,minrad=10,maxrad=60):
 
         return np.array([gb,gg,gr])/delta,ga/5,gx/2,gy/2,gradius/3,err
 
+    # max and min steps for gradient descent
     tryfor = 12
     mintry = 1
-    for i in range(tryfor):
-        try:
-            ref,bef,aftr = get_roi(x,y,oradius)
 
+    for i in range(tryfor):
+        try: # might have error
+            # what is the error at ROI?
+            ref,bef,aftr = get_roi(x,y,oradius)
             orig_err = np.mean(diff(bef,ref))
 
-            # paint
+            # do the painting
             err = paint_aftr_w(c,angle,x,y,oradius)
 
-            # if error is satisfactory
+            # if error decreased:
             if err<orig_err and i>=mintry :
                 paint_final_w(c,angle,oradius)
                 return True,i
 
-        # if not satisfactory
-
+            # if not satisfactory
+            # calculate gradient
             grad,anglegrad,gx,gy,gradius,err = calc_gradient(err)
+
         except NameError as e:
             print(e)
             print('error within calc_gradient')
             return False,i
 
-        if printgrad:
+        if printgrad: #debug purpose.
             if i==0:
                 print('----------')
                 print('orig_err',orig_err)
             print('ep:{}, err:{:3f}, color:{}, angle:{:2f}, xy:{:2f},{:2f}, radius:{:2f}'.format(i,err,c,angle,x,y,oradius))
 
-        #descend
+        # do descend
         if i<tryfor-1:
             c = c - (grad*.3).clip(max=0.3,min=-0.3)
             c = c.clip(max=1.,min=0.)
@@ -343,29 +328,8 @@ def paint_one(x,y,brushname='random',angle=-1.,minrad=10,maxrad=60):
             oradius = limit(oradius,7,100)
 
     return False,tryfor
-    # cv2.circle(aftr,(radius,radius),radius,color=c,thickness=-1)
-    #
-    # if diff(aftr,ref).sum()<orig_err:
-        #if after is better
-        # cv2.circle(canvas,(x,y), radius, color=c,thickness=-1)
-
-    # global mask
-    # paint white on mask
-    # cv2.circle(mask,(x,y), int(radius), color=1,thickness=-1)
-    # decay the mask
-    # mask = mask*0.999
-
-import gradient
 
 def putstrokes(howmany):
-    # k is epoch
-
-    # if k<20:
-    #     return paintcircle(x,y,minrad=50,maxrad=200) #num of epoch
-    # if k<60:
-    #     return paintcircle(x,y,minrad=30,maxrad=100) #num of epoch
-    # else:
-    #     return paintcircle(x,y,minrad=10,maxrad=50) #num of epoch
 
     def samplepoints():
         # sample a lot of points from one error image - save computation cost
@@ -395,47 +359,61 @@ def putstrokes(howmany):
     def pcasync(tup):
         y,x,angle = tup
 
-        b,key = rb.get_brush(key='random') # get random brush
+        b,key = rb.get_brush(key='random') # get a random brush
         return paint_one(x,y,brushname=key,minrad=10,maxrad=50,angle=angle) #num of epoch
 
     from thready import amap # multithreading
     point_list = samplepoints()
     return amap(pcasync,point_list)
 
+# autosave during canvas painting
 dosaveimage = True
 # dosaveimage = False
 
+# gradient debug info print
 printgrad = False
 # printgrad = True
 
+# run the whole thing
 def r(epoch=1):
+    # filename prefix for each run
     seed = int(rn()*1000)
+
     print('running...')
     st = time.time()
+
+    # timing counter for autosave and showimg()
     timecounter = 0
     showcounter = 0
+
     for i in range(epoch):
         loopfor = 1
         paranum = 512
+        # number of stroke tries per batch, sent to thread pool
+        # smaller number decreases efficiency
 
-        succeeded=0
+        succeeded = 0 # how many strokes being placed
         ti = time.time()
 
+        # average step of gradient descent performed
         avgstep=0.
         for k in range(loopfor):
             res = putstrokes(paranum) # res is a map of results
-            # print(res)
+
             for r in res:
                 status,step = res[r]
                 avgstep += step
-                succeeded+= 1 if status else 0
+                succeeded += 1 if status else 0
 
         avgstep/=loopfor*paranum
 
         steptime = time.time()-ti
         tottime = time.time()-st
+
+        #info out
         print('epoch',i,'/',epoch ,'succeeded:',succeeded,'/',loopfor*paranum,'avg step:' ,avgstep,'time:{:.1f}s, total:{:.1f}s'.format(steptime,tottime))
 
+        #autosave
         timecounter+=steptime
         if(timecounter>20):
             timecounter=0
@@ -444,6 +422,7 @@ def r(epoch=1):
                 cv2.imwrite(imname+'/{}_{:04d}.png'.format(seed,i),canvas*255)
                 print('saved.')
 
+        # refresh view
         showcounter+=steptime
         if(showcounter>3):
             showcounter=0

@@ -6,18 +6,6 @@ import random
 def rn():
     return random.random()
 
-# brush = cv2.imread('brush.png',0)
-
-# print(brush)
-# cv2.imshow('b',brush)
-# cv2.waitKey(0)
-
-# cv2.imshow('b',cbrush)
-# cv2.waitKey(0)
-
-# brushrad = 50
-# brushsrad = 10
-
 brushes = {}
 
 # load brushes from ./brushes directory
@@ -39,7 +27,7 @@ def get_brush(key='random'):
     return brush,key
 
 def rotate_brush(brush,rad,srad,angle):
-    # brush should be of grayscale, pointing upwards
+    # brush image should be of grayscale, pointing upwards
 
     # translate w x h into an area of 2rad x 2rad
 

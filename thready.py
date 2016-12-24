@@ -10,6 +10,8 @@ def fib(x):
 import threadpool as tp
 pool = tp.ThreadPool(8)
 
+# async map function with multithreading support.
+# returned mapresult is a map with integer indices.
 def amap(f,plist):
     mapresult = {}
 
