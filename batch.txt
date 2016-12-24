@@ -1,0 +1,1 @@
+magick morgify -path ed -format jpg -resize 111x111 *.png
