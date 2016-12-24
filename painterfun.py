@@ -6,6 +6,7 @@ import time
 import rotate_brush as rb
 import gradient
 from thready import amap
+import os
 
 imname = 'flower' # change this line to load different images
 
@@ -419,6 +420,10 @@ def r(epoch=1):
             timecounter=0
             if dosaveimage:
                 print('saving to disk...')
+
+                if not os.path.exists('./'+imname):
+                    os.mkdir('./'+imname)
+
                 cv2.imwrite(imname+'/{}_{:04d}.png'.format(seed,i),canvas*255)
                 print('saved.')
 
