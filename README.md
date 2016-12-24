@@ -2,6 +2,8 @@
 
 You might be looking for the oil painting synthesizer.
 
+![the flower](cover.jpg)
+
 # painterfun.py
 
 1. install Anaconda for Python 3 environment. <https://www.continuum.io/downloads#windows>
