@@ -17,7 +17,7 @@ You might be looking for the oil paint synthesizer.
 
 After step 4 you can start typing code.
 
-by default, `flower.jpg` is loaded. to switch image, modify `painterfun.py`, then exit and run `painterfun.py` again
+by default, `flower.jpg` is loaded. to switch to another image, run `load('another.jpg')`
 
 `r(1)` will try once to put 512 strokes onto the canvas. Then the canvas, original, and the error image will be displayed.
 
