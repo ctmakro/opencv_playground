@@ -8,6 +8,23 @@ import rotate_brush as rb
 import gradient
 from thready import amap
 import os
+import threading
+
+canvaslock = threading.Lock()
+canvaslock.acquire()
+canvaslock.release()
+
+def lockgen(canvas,ym,yp,xm,xp):
+    # given roi, know which lock.
+
+    if left:
+        return leftcanvaslock:
+    if right:
+        return rightcanvaslock:
+    if riding:
+        reutrn canvaslock:
+
+
 
 def load(filename='flower.jpg'):
     print('loading',filename,'...')
@@ -156,7 +173,7 @@ def repaint(constraint_angle=False,upscale=1.,batchsize=16):
         if upscale!=1:
             x,y,radius,srad = x*upscale,y*upscale,radius*upscale,srad*upscale
 
-        rb.compose(newcanvas,b,x=x,y=y,rad=radius,srad=srad,angle=angle,color=[cb,cg,cr],useoil=True)
+        rb.compose(newcanvas,b,x=x,y=y,rad=radius,srad=srad,angle=angle,color=[cb,cg,cr],useoil=True,lock=canvaslock)
 
     k = 0
     batch = []
@@ -269,10 +286,13 @@ def paint_one(x,y,brushname='random',angle=-1.,minrad=10,maxrad=60):
         # cv2.circle(canvas,(x,y), radius, color=color,thickness=-1)
         # cv2.ellipse(canvas,(int(x),int(y)),(radius,srad),angle,0,360,color=color,thickness=-1)
 
-        rb.compose(canvas,brush,x=x,y=y,rad=radius,srad=srad,angle=angle,color=color,usefloat=True,useoil=True)
+        rb.compose(canvas,brush,x=x,y=y,rad=radius,srad=srad,angle=angle,color=color,usefloat=True,useoil=True,lock=canvaslock)
         # enable oil effects on final paint.
 
-        record([x,y,radius,srad,angle,color[0],color[1],color[2],brushname])
+        # np.float64 will cause problems
+        rec = [x,y,radius,srad,angle,color[0],color[1],color[2],brushname]
+        rec = [float(r) if type(r)==np.float64 or type(r)==np.float32 else r for r in rec]
+        record(rec)
         # log it!
 
     # given err, calculate gradient of parameters wrt to it
@@ -358,7 +378,7 @@ def putstrokes(howmany):
 
         point_list = []
         y,x,d = wherediff()
-        phasemap = gradient.get_phase(flower*255)
+        phasemap = gradient.get_phase(flower)
 
         # while not enough points:
         while len(point_list)<howmany:

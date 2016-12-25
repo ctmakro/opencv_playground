@@ -99,8 +99,11 @@ def generate_motion_blur_kernel(dim=3,angle=0.):
 
     return kernel
 
+from colormixer import oilpaint_converters
+b2p,p2b = oilpaint_converters()
+
 # the brush process
-def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False):
+def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock=None):
     # generate, scale and rotate the brush as needed
     brush_image = rotated = rotate_brush(brush,rad,srad,angle) # as alpha
     brush_image = np.reshape(brush_image,brush_image.shape+(1,)) # cast alpha into (h,w,1)
@@ -122,87 +125,127 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False):
 
     #crop the roi params if < 0
     ym,yp,xm,xp = lc(ym),lc(yp),lc(xm),lc(xp)
-    roi = orig[ym:yp,xm:xp]
 
     # print(alpha.shape,roi.shape)
 
-    if alpha.shape[0]==0 or alpha.shape[1]==0 or roi.shape[0]==0 or roi.shape[1]==0:
-        return # dont paint if roi or brush is empty
+    if alpha.shape[0]==0 or alpha.shape[1]==0: #or roi.shape[0]==0 or roi.shape[1]==0:
+        # optimization: assume roi is valid
 
-    # to simulate oil painting mixing:
-    # color should blend in some fasion from given color to bg color
-    if useoil:
-        if usefloat:
-            pass
-        else:
-            roi = roi.astype('float32')/255.
-            color = np.array(color).astype('float32')/255.
-
-        alpha = alpha.astype('float32')/255.
-
-        from colormixer import oilpaint_converters
-        b2p,p2b = oilpaint_converters()
-
-        # convert into oilpaint space
-        roi,color = b2p(roi),b2p(color)
-
-        def getkernelsize(r):
-            k = min(55,int(r/4))
-            if k%2==0:
-                k+=1
-            if k<3:
-                k+=2
-            return k
-        sdim = getkernelsize(srad) # determine the blur kernel characteristics
-        ldim = getkernelsize(rad)
-
-        #blur brush pattern
-        softalpha = cv2.blur(alpha,(sdim,sdim)) # 0-1
-
-        mixing_ratio = np.random.rand(roi.shape[0],roi.shape[1],1)
-        # random [0,1] within shape (h,w,1
-
-        # increase mixing_ratio where brush pattern
-        # density is lower than 1
-        # i.e. edge enhance
-        mixing_ratio[:,:,0] += (1-softalpha)*2
-
-        mixing_th = 0.2 # threshold, larger => mix more
-        mixing_ratio = mixing_ratio > mixing_th
-        # threshold into [0,1]
-
-        # note: mixing_ratio is of dtype bool
-
-        # larger the mixing_ratio, stronger the color
-        colormap = roi - roi*mixing_ratio + color*mixing_ratio
-
-        # apply motion blur on the mixed colormap
-        kern = generate_motion_blur_kernel(dim=ldim,angle=angle)
-
-        # print(sdim,ldim,kern.shape,colormap.dtype,kern.dtype,mixing_ratio.dtype,roi.dtype,color.dtype)
-
-        colormap = cv2.filter2D(colormap,cv2.CV_32F,kern)
-
-        if usefloat:
-            orig[ym:yp,xm:xp] = p2b(roi*(1-alpha)+colormap*(alpha))
-        else:
-            orig[ym:yp,xm:xp] = p2b(roi*(1-alpha)+colormap*(alpha))*255.
+        print('alert: compose got empty roi')
+        # dont paint if roi or brush is empty
     else:
-        # no oil painting
-        colormap = np.array(color).astype('float32') # don't blend with bg, just paint fg
 
-        if usefloat:
-            # if original image is float
+        # to simulate oil painting mixing:
+        # color should blend in some fasion from given color to bg color
+        if useoil:
+            if usefloat: # to 0,1
+                pass
+            else:
+                # roi = roi.astype('float32')/255.
+                color = np.array(color).astype('float32')/255.
+
             alpha = alpha.astype('float32')/255.
-            orig[ym:yp,xm:xp] = roi*(1-alpha) + colormap*alpha
-        else:
-            # integer version
-            colormap = colormap.astype('uint32')
-            roi = roi.astype('uint32')
-            # use uint32 to prevent multiplication overflow
-            orig[ym:yp,xm:xp] = (roi*(255-alpha) + colormap*alpha)/255
 
-        # painted
+            # convert into oilpaint space
+            color = b2p(color)
+
+            def getkernelsize(r):
+                k = min(55,int(r/4))
+                if k%2==0:
+                    k+=1
+                if k<3:
+                    k+=2
+                return k
+            sdim = getkernelsize(srad) # determine the blur kernel characteristics
+            ldim = getkernelsize(rad)
+
+            #blur brush pattern
+            softalpha = cv2.blur(alpha,(sdim,sdim)) # 0-1
+
+            mixing_ratio = np.random.rand(alpha.shape[0],alpha.shape[1],1)
+            # random [0,1] within shape (h,w,1
+
+            # increase mixing_ratio where brush pattern
+            # density is lower than 1
+            # i.e. edge enhance
+            mixing_ratio[:,:,0] += (1-softalpha)*2
+
+            mixing_th = 0.2 # threshold, larger => mix more
+            mixing_ratio = mixing_ratio > mixing_th
+            # threshold into [0,1]
+
+            # note: mixing_ratio is of dtype bool
+
+            # apply motion blur on the mixed colormap
+            kern = generate_motion_blur_kernel(dim=ldim,angle=angle)
+
+            # print(sdim,ldim,kern.shape,colormap.dtype,kern.dtype,mixing_ratio.dtype,roi.dtype,color.dtype)
+
+            # roi loading moved downwards, for optimization
+            roi = orig[ym:yp,xm:xp]
+
+            if usefloat: # roi to 0,1
+                pass
+            else:
+                roi = roi.astype('float32')/255.
+
+            roi = b2p(roi)
+            # larger the mixing_ratio, stronger the color
+            colormap = roi - roi*mixing_ratio + color*mixing_ratio
+
+            colormap = cv2.filter2D(colormap,cv2.CV_32F,kern)
+
+            ca = colormap*alpha
+            ia = 1-alpha
+            
+            if lock is not None:
+                lock.acquire()
+                print('lock acquired for brush @',x,y)
+                # if canvas lock provided, acquire it. this prevents overwrite problems
+
+            #final loading of roi.
+            roi=orig[ym:yp,xm:xp]
+
+            if usefloat:
+                roi = b2p(roi)
+                orig[ym:yp,xm:xp] = p2b(roi*ia+ca)
+            else:
+                roi = b2p(roi.astype('float32')/255.)
+                orig[ym:yp,xm:xp] = p2b(roi*ia+ca)*255.
+        else:
+            # no oil painting
+            colormap = np.array(color).astype('float32') # don't blend with bg, just paint fg
+
+            if usefloat:
+                alpha = alpha.astype('float32')/255.
+                ia = 1-alpha
+                ca = colormap*alpha
+            else:
+                # integer version
+                colormap = colormap.astype('uint32')
+                ia = 255-alpha
+                ca = colormap*alpha
+
+            if lock is not None:
+                lock.acquire()
+                print('lock acquired for brush @',x,y)
+                # if canvas lock provided, acquire it. this prevents overwrite problems
+
+            roi = orig[ym:yp,xm:xp]
+
+            if usefloat:
+                # if original image is float
+                orig[ym:yp,xm:xp] = roi * ia + ca
+            else:
+                roi = roi.astype('uint32')
+                # use uint32 to prevent multiplication overflow
+                orig[ym:yp,xm:xp] = (roi * ia + ca)/255
+
+    # painted
+    if lock is not None:
+        lock.release()
+        print('lock released for brush @',x,y)
+        # if canvas lock provided, release it. this prevents overwrite problems
 
 def test():
     flower = cv2.imread('flower.jpg')
