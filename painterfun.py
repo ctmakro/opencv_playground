@@ -1,3 +1,4 @@
+print('importing packages...')
 import numpy as np
 import cv2
 import math
@@ -8,32 +9,43 @@ import gradient
 from thready import amap
 import os
 
-imname = 'flower' # change this line to load different images
+def load(filename='flower.jpg'):
+    print('loading',filename,'...')
+    global imname,flower,canvas,hist
+    global rescale,xs_small,ys_small,smallerflower
 
-# original image
-flower = cv2.imread(imname+'.jpg')
+    imname = filename.split('.')[0]
 
-xshape = flower.shape[1]
-yshape = flower.shape[0]
+    # original image
+    flower = cv2.imread(filename)
 
-rescale = xshape/768
-# display rescaling: you'll know when it's larger than your screen
-if rescale<1:
-    rescale=1
+    xshape = flower.shape[1]
+    yshape = flower.shape[0]
 
-xs_small = int(xshape/rescale)
-ys_small = int(yshape/rescale)
+    rescale = xshape/640
+    # display rescaling: you'll know when it's larger than your screen
+    if rescale<1:
+        rescale=1
 
-smallerflower = cv2.resize(flower,dsize=(xs_small,ys_small)).astype('float32')/255
-# for preview purpose,
-# if image too large
+    xs_small = int(xshape/rescale)
+    ys_small = int(yshape/rescale)
 
-# convert to float32
-flower = flower.astype('float32')/255
+    smallerflower = cv2.resize(flower,dsize=(xs_small,ys_small)).astype('float32')/255
+    # for preview purpose,
+    # if image too large
 
-# canvas initialized
-canvas = flower.copy()
-canvas[:,:] = 0.8
+    # convert to float32
+    flower = flower.astype('float32')/255
+
+    # canvas initialized
+    canvas = flower.copy()
+    canvas[:,:] = 0.8
+
+    #clear hist
+    hist=[]
+    print(filename,'loaded.')
+
+load()
 
 def rn():
     return random.random()
@@ -216,6 +228,10 @@ def paint_one(x,y,brushname='random',angle=-1.,minrad=10,maxrad=60):
     def get_roi(newx,newy,newrad):
         radius,srad = intrad(newrad)
 
+        xshape = flower.shape[1]
+        yshape = flower.shape[0]
+
+
         yp = int(min(newy+radius,yshape-1))
         ym = int(max(0,newy-radius))
         xp = int(min(newx+radius,xshape-1))
@@ -347,6 +363,7 @@ def putstrokes(howmany):
         # while not enough points:
         while len(point_list)<howmany:
             # randomly pick one point
+            yshape,xshape = flower.shape[0:2]
             ry,rx = int(rn()*yshape),int(rn()*xshape)
 
             # accept with high probability if error is large
