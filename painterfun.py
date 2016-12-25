@@ -29,10 +29,11 @@ smallerflower = cv2.resize(flower,dsize=(xs_small,ys_small)).astype('float32')/2
 # if image too large
 
 # convert to float32
-flower = np.array(flower).astype('float32')/255
+flower = flower.astype('float32')/255
 
 # canvas initialized
-canvas = np.zeros((yshape,xshape,3))+0.8
+canvas = flower.copy()
+canvas[:,:] = 0.8
 
 def rn():
     return random.random()
@@ -63,7 +64,7 @@ def destroy():
 def positive_sharpen(i,overblur=False,coeff=8.): #no darken to original image
     # emphasize the edges
     blurred = cv2.blur(i,(5,5))
-    sharpened = i*(1+coeff) - blurred * coeff
+    sharpened = i + (i - blurred) * coeff
     if overblur:
         return cv2.blur(np.maximum(sharpened,i),(11,11))
     return cv2.blur(np.maximum(sharpened,i),(3,3))
@@ -95,7 +96,8 @@ def wherediff(i1=canvas,i2=flower):
     return i,j,d
 
 def get_random_color():
-    return np.array([rn(),rn(),rn()])
+    return np.array([rn(),rn(),rn()]).astype('float32')
+    #danger: default to float64
 
 def limit(x,minimum,maximum):
     return min(max(x,minimum),maximum)
@@ -204,15 +206,14 @@ def paint_one(x,y,brushname='random',angle=-1.,minrad=10,maxrad=60):
         angle = rn()*360
 
     # set initial color
-    c = get_random_color()
+    # c = get_random_color()
     # sample color from image => converges faster.
-    c[:] = flower[int(y),int(x),:]
+    c = flower[int(y),int(x),:]
 
     delta = 1e-4
 
     # get copy of square ROI area, to do drawing and calculate error.
     def get_roi(newx,newy,newrad):
-
         radius,srad = intrad(newrad)
 
         yp = int(min(newy+radius,yshape-1))
@@ -228,6 +229,7 @@ def paint_one(x,y,brushname='random',angle=-1.,minrad=10,maxrad=60):
         bef = canvas[ym:yp,xm:xp]
         aftr = np.array(bef)
 
+        # print(flower.dtype,canvas.dtype,ref.dtype)
         return ref,bef,aftr
 
     # paint one stroke with given config and return the error.
@@ -271,7 +273,7 @@ def paint_one(x,y,brushname='random',angle=-1.,minrad=10,maxrad=60):
         err_aftr = paint_aftr_w((b,g,r+delta),angle,x,y,oradius)
         gr = err_aftr - err
 
-        err_aftr = paint_aftr_w(cc,(angle+5)%360,x,y,oradius)
+        err_aftr = paint_aftr_w(cc,(angle+5.)%360,x,y,oradius)
         ga = err_aftr - err
 
         err_aftr = paint_aftr_w(cc,angle,x+2,y,oradius)
@@ -328,6 +330,9 @@ def paint_one(x,y,brushname='random',angle=-1.,minrad=10,maxrad=60):
             oradius = oradius* (1-limit(gradius*20000,-0.2,.2))
             oradius = limit(oradius,7,100)
 
+            # print('after desc:x:{:2f},y:{:2f},angle:{:2f},oradius:{:5f}'
+            # .format(x,y,angle,oradius))
+
     return False,tryfor
 
 def putstrokes(howmany):
@@ -363,9 +368,18 @@ def putstrokes(howmany):
         b,key = rb.get_brush(key='random') # get a random brush
         return paint_one(x,y,brushname=key,minrad=10,maxrad=50,angle=angle) #num of epoch
 
-    from thready import amap # multithreading
-    point_list = samplepoints()
-    return amap(pcasync,point_list)
+    if True:
+        from thready import amap # multithreading
+        point_list = samplepoints()
+        return amap(pcasync,point_list)
+
+    else: # single threading test
+        point_list = samplepoints()
+        res={}
+        for idx,item in enumerate(point_list):
+            print('single threaded mode.',idx)
+            res[idx] = pcasync(item)
+        return res
 
 # autosave during canvas painting
 dosaveimage = True

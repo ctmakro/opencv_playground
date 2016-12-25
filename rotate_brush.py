@@ -132,14 +132,32 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False):
     # to simulate oil painting mixing:
     # color should blend in some fasion from given color to bg color
     if useoil:
-        dim = min(45,int(rad/5)) # determine the blur kernel characteristics
-        if dim%2==0:
-            dim+=1
-        if dim%2<3:
-            dim+=2
+        if usefloat:
+            pass
+        else:
+            roi = roi.astype('float32')/255.
+            color = np.array(color).astype('float32')/255.
+
+        alpha = alpha.astype('float32')/255.
+
+        from colormixer import oilpaint_converters
+        b2p,p2b = oilpaint_converters()
+
+        # convert into oilpaint space
+        roi,color = b2p(roi),b2p(color)
+
+        def getkernelsize(r):
+            k = min(55,int(r/4))
+            if k%2==0:
+                k+=1
+            if k<3:
+                k+=2
+            return k
+        sdim = getkernelsize(srad) # determine the blur kernel characteristics
+        ldim = getkernelsize(rad)
 
         #blur brush pattern
-        softalpha = cv2.blur(alpha,(dim,dim)).astype('float32')
+        softalpha = cv2.blur(alpha,(sdim,sdim)) # 0-1
 
         mixing_ratio = np.random.rand(roi.shape[0],roi.shape[1],1)
         # random [0,1] within shape (h,w,1
@@ -147,38 +165,75 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False):
         # increase mixing_ratio where brush pattern
         # density is lower than 1
         # i.e. edge enhance
-        mixing_ratio[:,:,0] += (1-softalpha/255)
+        mixing_ratio[:,:,0] += (1-softalpha)*2
 
-        mixing_th = 0.4 # threshold, larger => mix more
+        mixing_th = 0.2 # threshold, larger => mix more
         mixing_ratio = mixing_ratio > mixing_th
         # threshold into [0,1]
 
+        # note: mixing_ratio is of dtype bool
+
         # larger the mixing_ratio, stronger the color
-        colormap = roi*(1-mixing_ratio) + np.array(color)*mixing_ratio
-        colormap = colormap.astype('float32')
+        colormap = roi - roi*mixing_ratio + color*mixing_ratio
 
         # apply motion blur on the mixed colormap
-        kern = generate_motion_blur_kernel(dim=dim*2-1,angle=angle)
-        colormap = cv2.filter2D(colormap,cv2.CV_32F,kern)
-    else:
-        colormap = np.array(color) # don't blend with bg, just paint fg
+        kern = generate_motion_blur_kernel(dim=ldim,angle=angle)
 
-    if usefloat:
-        # if original image is float
-        orig[ym:yp,xm:xp] = (roi*(255-alpha) + colormap*alpha)/255.
+        # print(sdim,ldim,kern.shape,colormap.dtype,kern.dtype,mixing_ratio.dtype,roi.dtype,color.dtype)
+
+        colormap = cv2.filter2D(colormap,cv2.CV_32F,kern)
+
+        if usefloat:
+            orig[ym:yp,xm:xp] = p2b(roi*(1-alpha)+colormap*(alpha))
+        else:
+            orig[ym:yp,xm:xp] = p2b(roi*(1-alpha)+colormap*(alpha))*255.
     else:
-        colormap = colormap.astype('uint32')
-        roi = roi.astype('uint32')
-        # use uint32 to prevent multiplication overflow
-        orig[ym:yp,xm:xp] = (roi*(255-alpha) + colormap*alpha)/255
-    # paint
+        # no oil painting
+        colormap = np.array(color).astype('float32') # don't blend with bg, just paint fg
+
+        if usefloat:
+            # if original image is float
+            alpha = alpha.astype('float32')/255.
+            orig[ym:yp,xm:xp] = roi*(1-alpha) + colormap*alpha
+        else:
+            # integer version
+            colormap = colormap.astype('uint32')
+            roi = roi.astype('uint32')
+            # use uint32 to prevent multiplication overflow
+            orig[ym:yp,xm:xp] = (roi*(255-alpha) + colormap*alpha)/255
+
+        # painted
 
 def test():
     flower = cv2.imread('flower.jpg')
+    fint = flower.copy()
     for i in range(100):
-        brush = get_brush()
+        brush,key = get_brush()
         color = [rn()*255,rn()*255,rn()*255]
-        compose(flower,brush,x=rn()*flower.shape[1],y=rn()*flower.shape[0],rad=50,srad=10+20*rn(),angle=rn()*360,color=color)
 
-    cv2.imshow('yeah',flower)
-    cv2.waitKey(10)
+        print('integer no oil')
+        compose(fint,brush,x=rn()*flower.shape[1],y=rn()*flower.shape[0],
+        rad=50,srad=10+20*rn(),angle=rn()*360,color=color,useoil=False)
+
+        print('integer oil')
+        compose(fint,brush,x=rn()*flower.shape[1],y=rn()*flower.shape[0],
+        rad=50,srad=10+20*rn(),angle=rn()*360,color=color,useoil=True)
+
+        cv2.imshow('integer',fint)
+        cv2.waitKey(10)
+
+    floaty = flower.copy().astype('float32')/255.
+    for i in range(100):
+        brush,key = get_brush()
+        color = [rn(),rn(),rn()]
+
+        print('float no oil')
+        compose(floaty,brush,x=rn()*flower.shape[1],y=rn()*flower.shape[0],
+        rad=50,srad=10+20*rn(),angle=rn()*360,color=color,usefloat=True,useoil=False)
+
+        print('float oil')
+        compose(floaty,brush,x=rn()*flower.shape[1],y=rn()*flower.shape[0],
+        rad=50,srad=10+20*rn(),angle=rn()*360,color=color,usefloat=True,useoil=True)
+
+        cv2.imshow('float',floaty)
+        cv2.waitKey(10)
