@@ -16,16 +16,14 @@ canvaslock.release()
 
 def lockgen(canvas,ym,yp,xm,xp):
     # given roi, know which lock.
-
-    if left:
-        return leftcanvaslock:
-    if right:
-        return rightcanvaslock:
-    if riding:
-        reutrn canvaslock:
-
-
-
+    #
+    # if left:
+    #     return leftcanvaslock:
+    # if right:
+    #     return rightcanvaslock:
+    # if riding:
+    #     reutrn canvaslock:
+    pass
 def load(filename='flower.jpg'):
     print('loading',filename,'...')
     global imname,flower,canvas,hist
