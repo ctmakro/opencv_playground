@@ -115,7 +115,13 @@ def diff(i1,i2,overblur=False):
     return d
     # grayscalize
 
-def wherediff(i1=canvas,i2=flower):
+def wherediff(i1=None,i2=None):
+    global canvas,flower
+    if i1 is None:
+        i1 = canvas
+    if i2 is None:
+        i2 = flower
+
     # find out where max difference point is.
     d = diff(i1,i2,overblur=True)
 
@@ -323,7 +329,7 @@ def paint_one(x,y,brushname='random',angle=-1.,minrad=10,maxrad=60):
 
     # max and min steps for gradient descent
     tryfor = 12
-    mintry = 1
+    mintry = 3
 
     for i in range(tryfor):
         try: # might have error
@@ -438,7 +444,7 @@ def r(epoch=1):
 
     for i in range(epoch):
         loopfor = 1
-        paranum = 512
+        paranum = 256
         # number of stroke tries per batch, sent to thread pool
         # smaller number decreases efficiency
 

@@ -94,19 +94,45 @@ def generate_motion_blur_kernel(dim=3,angle=0.):
         ki[0] = dotp
         ki.iternext()
 
-    kernel = (1-kernel*kernel).clip(min=0)
-    kernel /= dim*dim*np.mean(kernel)
+    kernel = (1.3-kernel*kernel).clip(min=0)
+    kernel /= dim * dim * np.mean(kernel)
 
     return kernel
 
 from colormixer import oilpaint_converters
 b2p,p2b = oilpaint_converters()
 
+def sigmoid_array(x):
+    sgm = 1. / (1. + np.exp(-x))
+    return np.clip(sgm * 1.2 - .1,a_max=1.,a_min=0.)
+
 # the brush process
 def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock=None):
     # generate, scale and rotate the brush as needed
     brush_image = rotated = rotate_brush(brush,rad,srad,angle) # as alpha
     brush_image = np.reshape(brush_image,brush_image.shape+(1,)) # cast alpha into (h,w,1)
+
+    # gradient based color mixing
+    # generate a blend map `gbmix` that blend in the direction of the brush stroke
+
+    # first, generate xslope and yslope
+    gby,gbx = np.mgrid[0:brush_image.shape[0],0:brush_image.shape[1]]
+    gbx = gbx / float(brush_image.shape[1]) -.5
+    gby = gby / float(brush_image.shape[0]) -.5
+
+    dgx,dgy = rn()-.5,rn()-.5 # variation to angle
+    # then mix the slopes according to angle
+    gbmix = gbx * math.cos(angle/180.*math.pi+dgx) - gby * math.sin(angle/180.*math.pi+dgx)
+
+    # some noise?
+    gbmix += np.random.normal(loc=0.15,scale=.2,size=gbmix.shape)
+
+    #strenthen the slope
+    gbmix = sigmoid_array(gbmix*10)
+    gbmix = np.reshape(gbmix,gbmix.shape+(1,)).astype('float32')
+
+    # cv2.imshow('gbmix',gbmix)
+    # cv2.waitKey(1)
 
     # width and height of brush image
     bh = brush_image.shape[0]
@@ -122,6 +148,7 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock
 
     #crop the brush if exceed orig or <0
     alpha = brush_image[lc(0-ym):lc(bh-(yp-orig_h)),lc(0-xm):lc(bw-(xp-orig_w))]
+    gbmix = gbmix[lc(0-ym):lc(bh-(yp-orig_h)),lc(0-xm):lc(bw-(xp-orig_w))]
 
     #crop the roi params if < 0
     ym,yp,xm,xp = lc(ym),lc(yp),lc(xm),lc(xp)
@@ -150,14 +177,15 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock
             color = b2p(color)
 
             def getkernelsize(r):
-                k = min(55,int(r/4))
+                k = min(55,int(r))
                 if k%2==0:
                     k+=1
                 if k<3:
                     k+=2
                 return k
-            sdim = getkernelsize(srad) # determine the blur kernel characteristics
-            ldim = getkernelsize(rad)
+            sdim = getkernelsize(srad/5) # determine the blur kernel characteristics
+            ldim = getkernelsize(rad/5)
+            ssdim = getkernelsize(srad/7)
 
             #blur brush pattern
             softalpha = cv2.blur(alpha,(sdim,sdim)) # 0-1
@@ -170,7 +198,7 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock
             # i.e. edge enhance
             mixing_ratio[:,:,0] += (1-softalpha)*2
 
-            mixing_th = 0.2 # threshold, larger => mix more
+            mixing_th = 0.1 # threshold, larger => mix more
             mixing_ratio = mixing_ratio > mixing_th
             # threshold into [0,1]
 
@@ -190,17 +218,47 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock
                 roi = roi.astype('float32')/255.
 
             roi = b2p(roi)
-            # larger the mixing_ratio, stronger the color
-            colormap = roi - roi*mixing_ratio + color*mixing_ratio
 
+            # sample randomly from roi
+            random_color = roi[int(rn()*roi.shape[0]),int(rn()*roi.shape[1])]
+
+            # add some gaussian to color maybe?
+            # remember: color should be in UABS space
+            # tipcolor = np.random.normal(loc=color,scale=.04,size=alpha.shape[0:2]+(3,))
+            # mixing_ratio2 = np.random.rand(alpha.shape[0],alpha.shape[1],1)
+
+            # mixing_ratio2 = np.mgrid[]
+
+            # mixing_ratio2 = mixing_ratio2 > 0.4
+            tipcolor = color * gbmix + random_color  * (1 - gbmix)
+
+            #exp: how bout tip color blend from 1 color to another..
+
+            # tipcolor = np.clip(tipcolor,a_max = 1.-1e-6, a_min = 1e-6)
+
+            # tipcolor = cv2.filter2D(tipcolor,cv2.CV_32F,cv2.blur(kern,(sdim,sdim)))
+            # tipcolor = cv2.blur(tipcolor,(sdim,sdim))
+
+            # blend tip color (image) with bg
+            # larger the mixing_ratio, stronger the (tip) color
+            ia = (1 - mixing_ratio).astype('float32')
+            ca = tipcolor * mixing_ratio
+            # print(roi.dtype,ia.dtype,ca.dtype)
+            colormap = roi * ia + ca
+            # print(colormap.dtype,kern.dtype)
+
+            #mblur
             colormap = cv2.filter2D(colormap,cv2.CV_32F,kern)
 
+            ########
+
+            #final composition
             ca = colormap*alpha
             ia = 1-alpha
-            
+
             if lock is not None:
                 lock.acquire()
-                print('lock acquired for brush @',x,y)
+                # print('lock acquired for brush @',x,y)
                 # if canvas lock provided, acquire it. this prevents overwrite problems
 
             #final loading of roi.
@@ -228,7 +286,7 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock
 
             if lock is not None:
                 lock.acquire()
-                print('lock acquired for brush @',x,y)
+                # print('lock acquired for brush @',x,y)
                 # if canvas lock provided, acquire it. this prevents overwrite problems
 
             roi = orig[ym:yp,xm:xp]
@@ -244,35 +302,38 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock
     # painted
     if lock is not None:
         lock.release()
-        print('lock released for brush @',x,y)
+        # print('lock released for brush @',x,y)
         # if canvas lock provided, release it. this prevents overwrite problems
 
-def test():
+def test(onlyfloat=False,onlyoil=False):
     flower = cv2.imread('flower.jpg')
-    fint = flower.copy()
-    for i in range(100):
-        brush,key = get_brush()
-        color = [rn()*255,rn()*255,rn()*255]
+    if not onlyfloat:
+        fint = flower.copy()
+        for i in range(100):
+            brush,key = get_brush()
+            color = [rn()*255,rn()*255,rn()*255]
 
-        print('integer no oil')
-        compose(fint,brush,x=rn()*flower.shape[1],y=rn()*flower.shape[0],
-        rad=50,srad=10+20*rn(),angle=rn()*360,color=color,useoil=False)
+            if not onlyoil:
+                print('integer no oil')
+                compose(fint,brush,x=rn()*flower.shape[1],y=rn()*flower.shape[0],
+                rad=50,srad=10+20*rn(),angle=rn()*360,color=color,useoil=False)
 
-        print('integer oil')
-        compose(fint,brush,x=rn()*flower.shape[1],y=rn()*flower.shape[0],
-        rad=50,srad=10+20*rn(),angle=rn()*360,color=color,useoil=True)
+            print('integer oil')
+            compose(fint,brush,x=rn()*flower.shape[1],y=rn()*flower.shape[0],
+            rad=50,srad=10+20*rn(),angle=rn()*360,color=color,useoil=True)
 
-        cv2.imshow('integer',fint)
-        cv2.waitKey(10)
+            cv2.imshow('integer',fint)
+            cv2.waitKey(10)
 
     floaty = flower.copy().astype('float32')/255.
     for i in range(100):
         brush,key = get_brush()
         color = [rn(),rn(),rn()]
 
-        print('float no oil')
-        compose(floaty,brush,x=rn()*flower.shape[1],y=rn()*flower.shape[0],
-        rad=50,srad=10+20*rn(),angle=rn()*360,color=color,usefloat=True,useoil=False)
+        if not onlyoil:
+            print('float no oil')
+            compose(floaty,brush,x=rn()*flower.shape[1],y=rn()*flower.shape[0],
+            rad=50,srad=10+20*rn(),angle=rn()*360,color=color,usefloat=True,useoil=False)
 
         print('float oil')
         compose(floaty,brush,x=rn()*flower.shape[1],y=rn()*flower.shape[0],
