@@ -2,6 +2,8 @@
 *.png
 *.jpg
 
+!flower.jpg
+!readme.md
 !/brushes
 !cover.jpg
 !cover_newmodel.jpg
