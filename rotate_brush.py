@@ -112,27 +112,28 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock
     brush_image = rotated = rotate_brush(brush,rad,srad,angle) # as alpha
     brush_image = np.reshape(brush_image,brush_image.shape+(1,)) # cast alpha into (h,w,1)
 
-    # gradient based color mixing
-    # generate a blend map `gbmix` that blend in the direction of the brush stroke
+    if useoil:
+        # gradient based color mixing
+        # generate a blend map `gbmix` that blend in the direction of the brush stroke
 
-    # first, generate xslope and yslope
-    gby,gbx = np.mgrid[0:brush_image.shape[0],0:brush_image.shape[1]]
-    gbx = gbx / float(brush_image.shape[1]) -.5
-    gby = gby / float(brush_image.shape[0]) -.5
+        # first, generate xslope and yslope
+        gby,gbx = np.mgrid[0:brush_image.shape[0],0:brush_image.shape[1]]
+        gbx = gbx / float(brush_image.shape[1]) -.5
+        gby = gby / float(brush_image.shape[0]) -.5
 
-    dgx,dgy = rn()-.5,rn()-.5 # variation to angle
-    # then mix the slopes according to angle
-    gbmix = gbx * math.cos(angle/180.*math.pi+dgx) - gby * math.sin(angle/180.*math.pi+dgx)
+        dgx,dgy = rn()-.5,rn()-.5 # variation to angle
+        # then mix the slopes according to angle
+        gbmix = gbx * math.cos(angle/180.*math.pi+dgx) - gby * math.sin(angle/180.*math.pi+dgx)
 
-    # some noise?
-    gbmix += np.random.normal(loc=0.15,scale=.2,size=gbmix.shape)
+        # some noise?
+        gbmix += np.random.normal(loc=0.15,scale=.2,size=gbmix.shape)
 
-    #strenthen the slope
-    gbmix = sigmoid_array(gbmix*10)
-    gbmix = np.reshape(gbmix,gbmix.shape+(1,)).astype('float32')
+        #strenthen the slope
+        gbmix = sigmoid_array(gbmix*10)
+        gbmix = np.reshape(gbmix,gbmix.shape+(1,)).astype('float32')
 
-    # cv2.imshow('gbmix',gbmix)
-    # cv2.waitKey(1)
+        # cv2.imshow('gbmix',gbmix)
+        # cv2.waitKey(1)
 
     # width and height of brush image
     bh = brush_image.shape[0]
@@ -148,7 +149,8 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock
 
     #crop the brush if exceed orig or <0
     alpha = brush_image[lc(0-ym):lc(bh-(yp-orig_h)),lc(0-xm):lc(bw-(xp-orig_w))]
-    gbmix = gbmix[lc(0-ym):lc(bh-(yp-orig_h)),lc(0-xm):lc(bw-(xp-orig_w))]
+    if useoil:
+        gbmix = gbmix[lc(0-ym):lc(bh-(yp-orig_h)),lc(0-xm):lc(bw-(xp-orig_w))]
 
     #crop the roi params if < 0
     ym,yp,xm,xp = lc(ym),lc(yp),lc(xm),lc(xp)
@@ -209,6 +211,17 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock
 
             # print(sdim,ldim,kern.shape,colormap.dtype,kern.dtype,mixing_ratio.dtype,roi.dtype,color.dtype)
 
+            # sample randomly from roi
+            # random is acturally bad idea
+            # limit sample area under alpha is better
+            ry,rx = 0,0
+            n = 20
+            while n>0:
+                ry,rx = int(rn()*alpha.shape[0]),int(rn()*alpha.shape[1])
+                if alpha[ry,rx]>.5:
+                    break
+                n-=1
+
             # roi loading moved downwards, for optimization
             roi = orig[ym:yp,xm:xp]
 
@@ -219,8 +232,11 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock
 
             roi = b2p(roi)
 
-            # sample randomly from roi
-            random_color = roi[int(rn()*roi.shape[0]),int(rn()*roi.shape[1])]
+            if n>0:
+                random_color = roi[ry,rx]
+                tipcolor = color * gbmix + random_color  * (1 - gbmix)
+            else:
+                tipcolor = color
 
             # add some gaussian to color maybe?
             # remember: color should be in UABS space
@@ -230,7 +246,6 @@ def compose(orig,brush,x,y,rad,srad,angle,color,usefloat=False,useoil=False,lock
             # mixing_ratio2 = np.mgrid[]
 
             # mixing_ratio2 = mixing_ratio2 > 0.4
-            tipcolor = color * gbmix + random_color  * (1 - gbmix)
 
             #exp: how bout tip color blend from 1 color to another..
 
