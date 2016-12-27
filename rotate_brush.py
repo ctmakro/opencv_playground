@@ -71,33 +71,50 @@ def rotate_brush(brush,rad,srad,angle):
 def lc(i): #low clip
     return int(max(0,i))
 
-def generate_motion_blur_kernel(dim=3,angle=0.):
-    radian = angle/360*math.pi*2 +  math.pi/2
+def generate_motion_blur_kernel(dim=3,angle=0.,threshold_factor=1.3,divide_by_dim=True):
+    radian = angle/360*math.pi*2 + math.pi/2
     # perpendicular
-    x2,y2 = math.cos(radian),math.sin(radian)
+    # x2,y2 = math.cos(radian),math.sin(radian)
     # the directional vector
 
-    center = (dim+1)/2-1
-    kernel = np.zeros((dim,dim)).astype('float32')
+    # first, generate xslope and yslope
+    gby,gbx = np.mgrid[0:dim,0:dim]
+    cen = (dim+1)/2-1
+    gbx = gbx - float(cen)
+    gby = gby - float(cen)
+    # gbx = gbx / float(cen) -.5
+    # gby = gby / float(cen) -.5
 
-    # iterate thru kernel
-    ki = np.nditer(kernel,op_flags=['readwrite'],flags=['multi_index'])
-    while not ki.finished:
-        ya,xa = ki.multi_index
-        y1,x1 = -(ya-center),xa-center # flip y since it's image axis
+    # then mix the slopes according to angle
+    gbmix = gbx * math.cos(radian) - gby * math.sin(radian)
 
-        # now y1, x1 correspond to each kernel pixel's cartesian coord
-        # with center being 0,0
+    kernel = (threshold_factor - gbmix*gbmix).clip(min=0.,max=1.)
 
-        dotp = x1*x2 + y1*y2 # dotprod
+    # center = (dim+1)/2-1
+    # kernel = np.zeros((dim,dim)).astype('float32')
 
-        ki[0] = dotp
-        ki.iternext()
+    # # iterate thru kernel
+    # ki = np.nditer(kernel,op_flags=['readwrite'],flags=['multi_index'])
+    # while not ki.finished:
+    #     ya,xa = ki.multi_index
+    #     y1,x1 = -(ya-center),xa-center # flip y since it's image axis
+    #
+    #     # now y1, x1 correspond to each kernel pixel's cartesian coord
+    #     # with center being 0,0
+    #
+    #     dotp = x1*x2 + y1*y2 # dotprod
+    #
+    #     ki[0] = dotp
+    #     ki.iternext()
+    #
+    # kernel = (threshold_factor-kernel*kernel).clip(min=0,max=1)
 
-    kernel = (1.3-kernel*kernel).clip(min=0)
-    kernel /= dim * dim * np.mean(kernel)
+    if divide_by_dim:
+        kernel /= dim * dim * np.mean(kernel)
+    else:
+        pass
 
-    return kernel
+    return kernel.astype('float32')
 
 from colormixer import oilpaint_converters
 b2p,p2b = oilpaint_converters()
