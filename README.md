@@ -25,6 +25,8 @@ you may execute `r(1)` multiple times.
 
 `r(10)` will try 10 times. that's a lot of strokes!
 
+![](running.jpg)
+
 canvas will be autosaved under /[name of the image file]/ directory between tries. You will be noticed from the CLI.
 
 `hist` variable holds all stroke history.
