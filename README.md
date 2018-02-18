@@ -8,12 +8,12 @@ You might be looking for the oil paint synthesizer.
 
 1. install Anaconda/Miniconda environment for Python 3 . <https://www.continuum.io/downloads#windows>
 2. install OpenCV for Python
-  - if you know what you're doing: `pip install opencv-python`
-  - if you are a normal person: Download
-    <http://www.lfd.uci.edu/~gohlke/pythonlibs/f9r7rmd8/opencv_python-3.1.0-cp35-cp35m-win_amd64.whl>
-    then `pip install open.....amd64.whl`.
 
-    (If you're using OS X / Linux, there are prebuilt packages of opencv-python on `conda`)
+  - if you know what you're doing: `pip install opencv-python`
+
+  - if you are on Windows and are out of luck: Download the version of `opencv-python` for your architecture from <https://www.lfd.uci.edu/~gohlke/pythonlibs/> then `pip install opencv.....amd64.whl`.
+
+    (If you're using OS X, there are prebuilt packages of opencv-python on `conda`)
 3. (must) install threadpool: `pip install threadpool`
 4. `ipython -i painterfun.py` to run the program
 
